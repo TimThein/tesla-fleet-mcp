@@ -10,3 +10,11 @@ logs/
 run/
 mcp-token.txt
 public-url.txt
+oauth-passphrase.hash
+oauth-tokens.json
+oauth-tokens.json.tmp*
+token-cache.json*
+pkce-pending.json*
+login-url.txt
+*.bak-*
+*.key
