@@ -1,5 +1,7 @@
 # tesla-fleet-mcp
 
+> Local deployment: see [LOCAL_CHANGES.md](LOCAL_CHANGES.md) for all changes vs upstream 420c6e2 (OAuth, Powerwall writes, energy history tools, token refresh fix).
+
 Tesla [Fleet API](https://developer.tesla.com/docs/fleet-api) MCP for **Grok Bot**, **Grok Build**, and Cursor.
 
 Grok does not accept stdio or localhost. Host this server over **Streamable HTTP** on a public HTTPS URL, then connect the `tesla` plugin.
@@ -85,6 +87,8 @@ A comma-separated `endpoints` query returns **metadata only** (no `charge_state`
 | `energy_products` | `GET /api/1/products`. Needs `energy_device_data` (re-login after upgrade) |
 | `energy_live_status` | `energy_site_id`. Live power / soe / grid |
 | `energy_site_info` | `energy_site_id`. Site config |
+| `get_energy_telemetry_history` | `energy_site_id`, `kind` (default `charge`), `start_date`/`end_date` (RFC3339), `time_zone` (default `America/Los_Angeles`). Needs `energy_device_data` |
+| `get_energy_calendar_history` | `energy_site_id`, `kind` (default `energy`; also `soe`, `power`, ...), `start_date`/`end_date`, `period` (day/week/month/year), `time_zone`. Needs `energy_device_data` |
 
 ### Writes that need `TESLA_COMMAND_BASE`
 

@@ -3,11 +3,13 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { env } from "./config.ts";
 import { createTeslaServer } from "./server.ts";
+import { OAuthProvider, type OAuthOptions } from "./oauth.ts";
 
 export type HttpListen = {
   host: string;
   port: number;
   token: string;
+  oauth?: OAuthOptions;
 };
 
 function cors(res: ServerResponse) {
@@ -56,10 +58,16 @@ export function httpOptionsFromEnv(): HttpListen {
     host: env("TESLA_MCP_HOST", "0.0.0.0"),
     port,
     token,
+    oauth: {
+      passphraseHashFile: env("TESLA_OAUTH_PASSPHRASE_HASH_FILE", new URL("../oauth-passphrase.hash", import.meta.url).pathname),
+      storePath: env("TESLA_OAUTH_STORE", new URL("../oauth-tokens.json", import.meta.url).pathname),
+      extraRedirectHosts: (env("TESLA_OAUTH_EXTRA_REDIRECT_HOSTS", "") ?? "").split(",").map((s) => s.trim()).filter(Boolean),
+    },
   };
 }
 
 export function createHttpServer(opts: HttpListen) {
+  const oauth = opts.oauth ? new OAuthProvider(opts.oauth) : undefined;
   return createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
     cors(res);
@@ -75,13 +83,26 @@ export function createHttpServer(opts: HttpListen) {
       return;
     }
 
+    if (oauth && (url.pathname.startsWith("/oauth/") || url.pathname.startsWith("/.well-known/"))) {
+      if (await oauth.handle(req, res, url)) return;
+    }
+
+    if (url.pathname !== "/health") { const h = req.headers.authorization; console.log(`[req] ${req.method} ${url.pathname} ua=${(req.headers["user-agent"]||"").slice(0,40)} auth=${h ? h.split(" ")[0] + "(" + (h.length) + ")" : "none"}`); }
     if (url.pathname !== "/mcp") {
       json(res, 404, { jsonrpc: "2.0", error: { code: -32004, message: "Not found" }, id: null });
       return;
     }
 
-    if (!bearerOk(req.headers.authorization, opts.token)) {
-      res.setHeader("WWW-Authenticate", "Bearer");
+    const auth = req.headers.authorization;
+    const oauthOk = !!oauth && !!auth?.startsWith("Bearer ") && oauth.validateAccessToken(auth.slice(7));
+    if (!bearerOk(auth, opts.token) && !oauthOk) {
+      res.setHeader(
+        "WWW-Authenticate",
+        oauth
+          ? `Bearer resource_metadata="${OAuthProvider.issuer(req)}/.well-known/oauth-protected-resource"`
+          : "Bearer",
+      );
+      console.log(`[req] 401 on /mcp oauthOk=${oauthOk}`);
       json(res, 401, { jsonrpc: "2.0", error: { code: -32001, message: "Unauthorized" }, id: null });
       return;
     }

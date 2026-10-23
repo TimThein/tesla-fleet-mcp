@@ -6,3 +6,7 @@ pkce-pending.json
 dist/
 *.pem
 !env.example
+logs/
+run/
+mcp-token.txt
+public-url.txt

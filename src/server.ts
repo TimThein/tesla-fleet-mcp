@@ -30,6 +30,25 @@ function vehicleRead(vin: string | undefined, suffix: string) {
   return fleet("GET", vehiclePath(vin, suffix));
 }
 
+const energySiteArg = {
+  energy_site_id: z.union([z.string(), z.number()]).describe("energy_site_id from energy_products"),
+};
+
+function energySitePath(id: string | number, suffix: string): string {
+  return `/api/1/energy_sites/${encodeURIComponent(String(id))}${suffix}`;
+}
+
+/** Energy site commands go straight to the Fleet API base (no vehicle command proxy). */
+function energyCommand(id: string | number, suffix: string, body: unknown) {
+  return fleet("POST", energySitePath(id, suffix), body);
+}
+
+function energyQuery(fields: Record<string, string | undefined>): string {
+  const q = new URLSearchParams();
+  for (const [k, v] of Object.entries(fields)) if (v !== undefined && v !== "") q.set(k, v);
+  return q.toString();
+}
+
 function definedBody(fields: Record<string, unknown>): Record<string, unknown> {
   return Object.fromEntries(Object.entries(fields).filter(([, v]) => v !== undefined));
 }
@@ -118,6 +137,97 @@ export function createTeslaServer(): McpServer {
     { energy_site_id: z.union([z.string(), z.number()]) },
     async ({ energy_site_id }) =>
       run(() => fleet("GET", `/api/1/energy_sites/${encodeURIComponent(String(energy_site_id))}/site_info`)),
+  );
+
+  server.tool(
+    "get_energy_telemetry_history",
+    "Energy site telemetry history (GET telemetry_history), e.g. kind=charge for Wall Connector charge history. Read-only. Needs energy_device_data scope.",
+    {
+      ...energySiteArg,
+      kind: z.string().default("charge").describe("Telemetry kind, default 'charge'"),
+      start_date: z.string().optional().describe("RFC3339 start, e.g. 2026-10-22T00:00:00-07:00"),
+      end_date: z.string().optional().describe("RFC3339 end"),
+      time_zone: z.string().default("America/Los_Angeles").describe("IANA time zone"),
+    },
+    async ({ energy_site_id, kind, start_date, end_date, time_zone }) =>
+      run(() =>
+        fleet("GET", energySitePath(energy_site_id, `/telemetry_history?${energyQuery({ kind, start_date, end_date, time_zone })}`)),
+      ),
+  );
+
+  server.tool(
+    "get_energy_calendar_history",
+    "Energy site calendar history (GET calendar_history). kind: energy (default), soe, power, backup, ... (any string passed through). period: day/week/month/year. Read-only. Needs energy_device_data scope.",
+    {
+      ...energySiteArg,
+      kind: z.string().default("energy").describe("History kind: energy, soe, power, backup, ..."),
+      start_date: z.string().optional().describe("RFC3339 start, e.g. 2026-10-22T00:00:00-07:00"),
+      end_date: z.string().optional().describe("RFC3339 end"),
+      period: z.enum(["day", "week", "month", "year"]).optional(),
+      time_zone: z.string().default("America/Los_Angeles").describe("IANA time zone"),
+    },
+    async ({ energy_site_id, kind, start_date, end_date, period, time_zone }) =>
+      run(() =>
+        fleet(
+          "GET",
+          energySitePath(energy_site_id, `/calendar_history?${energyQuery({ kind, start_date, end_date, period, time_zone })}`),
+        ),
+      ),
+  );
+
+  server.tool(
+    "energy_set_operation_mode",
+    "Set Powerwall operation mode. Extra confirm. self_consumption = Self-Powered; autonomous = Time-Based Control (savings). Needs energy_cmds scope.",
+    { ...energySiteArg, default_real_mode: z.enum(["self_consumption", "autonomous"]) },
+    async ({ energy_site_id, default_real_mode }) =>
+      run(() => energyCommand(energy_site_id, "/operation", { default_real_mode })),
+  );
+
+  server.tool(
+    "energy_set_backup_reserve",
+    "Set Powerwall backup reserve percent (0-100) held for outages. Extra confirm. Needs energy_cmds scope.",
+    { ...energySiteArg, backup_reserve_percent: z.number().int().min(0).max(100) },
+    async ({ energy_site_id, backup_reserve_percent }) =>
+      run(() => energyCommand(energy_site_id, "/backup", { backup_reserve_percent })),
+  );
+
+  server.tool(
+    "energy_set_storm_mode",
+    "Enable or disable Storm Watch (pre-charge ahead of severe weather). Needs energy_cmds scope.",
+    { ...energySiteArg, enabled: z.boolean() },
+    async ({ energy_site_id, enabled }) => run(() => energyCommand(energy_site_id, "/storm_mode", { enabled })),
+  );
+
+  server.tool(
+    "energy_set_grid_import_export",
+    "Set grid charging/export rules. Extra confirm. disallow_charge_from_grid_with_solar_installed: true blocks grid charging. customer_preferred_export_rule: pv_only (solar only), battery_ok (solar and battery), never. Pass at least one. Needs energy_cmds scope.",
+    {
+      ...energySiteArg,
+      disallow_charge_from_grid_with_solar_installed: z.boolean().optional(),
+      customer_preferred_export_rule: z.enum(["pv_only", "battery_ok", "never"]).optional(),
+    },
+    async ({ energy_site_id, disallow_charge_from_grid_with_solar_installed, customer_preferred_export_rule }) =>
+      run(async () => {
+        const body = definedBody({ disallow_charge_from_grid_with_solar_installed, customer_preferred_export_rule });
+        if (Object.keys(body).length === 0) {
+          throw new Error(
+            "Pass disallow_charge_from_grid_with_solar_installed and/or customer_preferred_export_rule.",
+          );
+        }
+        return energyCommand(energy_site_id, "/grid_import_export", body);
+      }),
+  );
+
+  server.tool(
+    "energy_set_off_grid_vehicle_charging_reserve",
+    "Set the Powerwall percent kept back from vehicle charging during a grid outage (0-100). Needs energy_cmds scope.",
+    { ...energySiteArg, off_grid_vehicle_charging_reserve_percent: z.number().int().min(0).max(100) },
+    async ({ energy_site_id, off_grid_vehicle_charging_reserve_percent }) =>
+      run(() =>
+        energyCommand(energy_site_id, "/off_grid_vehicle_charging_reserve", {
+          off_grid_vehicle_charging_reserve_percent,
+        }),
+      ),
   );
 
   server.tool("wake_up", "Wake the vehicle from sleep.", vinArg, async ({ vin }) =>
