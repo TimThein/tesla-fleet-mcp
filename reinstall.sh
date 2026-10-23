@@ -1,5 +1,7 @@
 #!/bin/bash
 # Idempotent reinstall of tesla-fleet-mcp. Never touches key/secret dirs.
+# WARNING: fresh-install script. It checks out the pinned upstream commit ($PIN) and
+# would wipe local (uncommitted/deployed) changes. Do not run on a live deployment.
 set -euo pipefail
 DIR="${TESLA_MCP_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
 PIN=420c6e2be6324d0b2477e1f163f7429ad9c94019
