@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { AUTH, SCOPES, cachePath, redirectUri, requiredEnv } from "./config.ts";
 
@@ -22,7 +22,9 @@ function readJson<T>(path: string): T | undefined {
 
 function writeSecret(path: string, data: unknown) {
   mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, JSON.stringify(data), { mode: 0o600 });
+  const tmp = `${path}.tmp-${process.pid}`;
+  writeFileSync(tmp, JSON.stringify(data), { mode: 0o600 });
+  renameSync(tmp, path); // atomic replace
 }
 
 function b64url(buf: Buffer): string {
@@ -58,7 +60,18 @@ async function tokenRequest(body: Record<string, string>): Promise<TokenCache> {
   };
 }
 
-export async function acquireToken(): Promise<string> {
+// Single-flight: Tesla refresh tokens rotate and are single-use; concurrent
+// refreshes with the same token can get the whole grant revoked (login_required).
+let inflight: Promise<string> | null = null;
+export function acquireToken(): Promise<string> {
+  const path = cachePath();
+  const cached = readJson<TokenCache>(path);
+  if (cached?.access_token && cached.expires_at > Date.now()) return Promise.resolve(cached.access_token);
+  if (!inflight) inflight = refreshToken().finally(() => { inflight = null; });
+  return inflight;
+}
+
+async function refreshToken(): Promise<string> {
   const path = cachePath();
   const cached = readJson<TokenCache>(path);
   if (!cached?.access_token) throw new Error("Not signed in. Run: npm run login");
