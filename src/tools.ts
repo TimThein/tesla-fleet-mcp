@@ -20,6 +20,8 @@ export const TESLA_TOOLS = [
   { name: "energy_products", kind: "read", needsProxy: false },
   { name: "energy_live_status", kind: "read", needsProxy: false },
   { name: "energy_site_info", kind: "read", needsProxy: false },
+  { name: "get_energy_telemetry_history", kind: "read", needsProxy: false },
+  { name: "get_energy_calendar_history", kind: "read", needsProxy: false },
   { name: "wake_up", kind: "write", needsProxy: false, danger: "confirm" },
   { name: "climate_start", kind: "write", needsProxy: true, danger: "confirm" },
   { name: "climate_stop", kind: "write", needsProxy: true, danger: "confirm" },

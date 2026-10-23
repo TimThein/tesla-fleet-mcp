@@ -85,6 +85,8 @@ A comma-separated `endpoints` query returns **metadata only** (no `charge_state`
 | `energy_products` | `GET /api/1/products`. Needs `energy_device_data` (re-login after upgrade) |
 | `energy_live_status` | `energy_site_id`. Live power / soe / grid |
 | `energy_site_info` | `energy_site_id`. Site config |
+| `get_energy_telemetry_history` | `energy_site_id`, `kind` (default `charge`; Wall Connector history, may be `null`), `start_date`/`end_date` (RFC3339), `time_zone`. Needs `energy_device_data` |
+| `get_energy_calendar_history` | `energy_site_id`, `kind` (default `energy`; also `soe` = battery % history, `power`, `backup`), `start_date`/`end_date`, `period` (day/week/month/year), `time_zone`. Needs `energy_device_data` |
 
 ### Writes that need `TESLA_COMMAND_BASE`
 

@@ -2,7 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { vinOrDefault } from "./config.ts";
 import { fleet } from "./fleet.ts";
-import { endpointsQuery } from "./util.ts";
+import { endpointsQuery, qs } from "./util.ts";
 
 function text(data: unknown) {
   return { content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }] };
@@ -118,6 +118,45 @@ export function createTeslaServer(): McpServer {
     { energy_site_id: z.union([z.string(), z.number()]) },
     async ({ energy_site_id }) =>
       run(() => fleet("GET", `/api/1/energy_sites/${encodeURIComponent(String(energy_site_id))}/site_info`)),
+  );
+
+  server.tool(
+    "get_energy_telemetry_history",
+    "Energy site telemetry history (GET telemetry_history), e.g. kind=charge for Wall Connector charge history (may be null if the Wall Connector is offline). Read-only. Needs energy_device_data scope.",
+    {
+      energy_site_id: z.union([z.string(), z.number()]),
+      kind: z.string().default("charge").describe("Telemetry kind, default 'charge'"),
+      start_date: z.string().optional().describe("RFC3339 start, e.g. 2026-01-01T00:00:00-08:00"),
+      end_date: z.string().optional().describe("RFC3339 end"),
+      time_zone: z.string().optional().describe("IANA time zone, e.g. Europe/Amsterdam"),
+    },
+    async ({ energy_site_id, kind, start_date, end_date, time_zone }) =>
+      run(() =>
+        fleet(
+          "GET",
+          `/api/1/energy_sites/${encodeURIComponent(String(energy_site_id))}/telemetry_history${qs({ kind, start_date, end_date, time_zone })}`,
+        ),
+      ),
+  );
+
+  server.tool(
+    "get_energy_calendar_history",
+    "Energy site calendar history (GET calendar_history). kind: energy (default; Wh buckets), soe (battery % history), power (W), backup, ... period: day/week/month/year. Read-only. Needs energy_device_data scope.",
+    {
+      energy_site_id: z.union([z.string(), z.number()]),
+      kind: z.string().default("energy").describe("History kind: energy, soe, power, backup, ..."),
+      start_date: z.string().optional().describe("RFC3339 start, e.g. 2026-01-01T00:00:00-08:00"),
+      end_date: z.string().optional().describe("RFC3339 end"),
+      period: z.enum(["day", "week", "month", "year"]).optional(),
+      time_zone: z.string().optional().describe("IANA time zone, e.g. Europe/Amsterdam"),
+    },
+    async ({ energy_site_id, kind, start_date, end_date, period, time_zone }) =>
+      run(() =>
+        fleet(
+          "GET",
+          `/api/1/energy_sites/${encodeURIComponent(String(energy_site_id))}/calendar_history${qs({ kind, start_date, end_date, period, time_zone })}`,
+        ),
+      ),
   );
 
   server.tool("wake_up", "Wake the vehicle from sleep.", vinArg, async ({ vin }) =>

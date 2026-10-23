@@ -175,4 +175,31 @@ describe("command proxy routing", () => {
       });
     });
   });
+
+  it("builds energy history queries against TESLA_FLEET_BASE", async () => {
+    fakeCache();
+    const captured: Captured[] = [];
+    const fleetApi = await listen(async (req, res) => {
+      captured.push({ method: req.method ?? "", url: req.url ?? "", body: await readBody(req) });
+      jsonOk(req, res, { response: {} });
+    });
+    restore.push(() => fleetApi.close());
+    stashEnv("TESLA_FLEET_BASE", fleetApi.origin);
+
+    await withMcp(async (client) => {
+      const cal = await client.callTool({
+        name: "get_energy_calendar_history",
+        arguments: { energy_site_id: 123, kind: "soe", period: "day", start_date: "2026-01-01T00:00:00Z" },
+      });
+      expect(cal.isError).toBeUndefined();
+      expect(captured.at(-1)).toMatchObject({
+        method: "GET",
+        url: "/api/1/energy_sites/123/calendar_history?kind=soe&start_date=2026-01-01T00%3A00%3A00Z&period=day",
+      });
+
+      const tel = await client.callTool({ name: "get_energy_telemetry_history", arguments: { energy_site_id: "123" } });
+      expect(tel.isError).toBeUndefined();
+      expect(captured.at(-1)?.url).toBe("/api/1/energy_sites/123/telemetry_history?kind=charge");
+    });
+  });
 });
